@@ -15,6 +15,7 @@ public:
         this->arrivalTime = arrivalTime;
         remainingService = serviceTime;
         remainingIo = totalIo;
+        remainingIoBlock = ioBlock;
         this->ioBlock = ioBlock;
 
         if (ioBlock == 0)
@@ -23,7 +24,7 @@ public:
             serviceBlock = serviceTime / ((totalIo / ioBlock) + 1);
     }
     string label;
-    int arrivalTime, remainingService, remainingIo, ioBlock, serviceBlock;
+    int arrivalTime, remainingService, remainingIo, ioBlock, serviceBlock, remainingIoBlock;
 };
 
 class Scheduler
@@ -31,8 +32,8 @@ class Scheduler
 public:
     Scheduler()
     {
-        time = 0;
-        blockStartTime = 0;
+        time = 1;
+        blockStartTime = 1;
     }
 
     void addProcess(Process p)
@@ -126,7 +127,7 @@ public:
     {
         printf("t |ready|io   |r|done\n");
         printf("---------------------\n");
-        while (time < 25)
+        while (time < 50)
         {
             // 1. Check for new additions to the Ready queue
             //    from the Future queue
@@ -154,27 +155,68 @@ public:
             }
 
             // Is the running process done?
-            if (runningProcess.front().remainingService == 1) {
+            if (!runningProcess.empty() && runningProcess.front().remainingService == 0)
+            {
                 // Add currently running process to "done"
                 doneQueue.push_back(runningProcess.front());
                 // Clear out currently running process
                 runningProcess.clear();
                 // Add the ready queue's front process to "running"
-                runningProcess.push_back(readyQueue.front());
-                // Remove from the ready queue's front
-                readyQueue.erase(readyQueue.begin());
+                if (!readyQueue.empty())
+                {
+                    runningProcess.push_back(readyQueue.front());
+                    blockStartTime = time;
+                    // Remove from the ready queue's front
+                    readyQueue.erase(readyQueue.begin());
+                }
                 // Reset blockStartTime
                 blockStartTime = time;
             }
 
             // Is the running process ready for IO?
-            if (time - blockStartTime >= runningProcess.front().serviceBlock) {
-                cout << "Time for a break!" << endl;
-                
+            if (runningProcess.empty())
+            {
+                // cerr << "No process is running!" << endl;
+            }
+            else if (runningProcess.front().serviceBlock != 0 && time - blockStartTime >= runningProcess.front().serviceBlock)
+            {
+                // Move running process to I/O queue
+                ioQueue.push_back(runningProcess.front());
+                runningProcess.clear();
+                if (!readyQueue.empty())
+                {
+                    runningProcess.push_back(readyQueue.front());
+                    blockStartTime = time;
+                    readyQueue.erase(readyQueue.begin());
+                }
             }
 
+            // Look through IO queue processes.
+            // Decrement IO time on front process.
+            // If remaining % io_block == 0, pop
+            if (!ioQueue.empty()) {
+                
+                if (ioQueue.front().remainingIoBlock == 0)
+                {
+                    ioQueue.front().remainingIoBlock = ioQueue.front().ioBlock;
+                    if (runningProcess.empty())
+                        runningProcess.push_back(ioQueue.front());
+                    else   
+                        readyQueue.insert(readyQueue.begin(), ioQueue.front());
+                    ioQueue.erase(ioQueue.begin());
+                } else 
+                {
+                    ioQueue.front().remainingIoBlock--;
+                }
+                ioQueue.front().remainingIo--;
+                
+            }
+ 
+                
+
             printStatus();
-            runningProcess.front().remainingService--;
+            if (!runningProcess.empty())
+                runningProcess.front().remainingService--;
             time++;
         }
     }
