@@ -12,7 +12,9 @@ Select the process with the smallest arrival time and run it until completion.
 
 ### Highest Response Ratio Next (HRRN)
 
-$$R=\frac{w+s}{s}$$
+$$
+R=\frac{w+s}{s}
+$$
 
 where $R$ is the response ratio, $w$ is the time spent waiting on the processor, and $s$ is the expected service time.
 
@@ -36,6 +38,11 @@ $$\dagger$$ At equal intervals during service time
 4. Ratio of TAT to service time
 5. Throughput
 
+## Assumptions
+
+1. The service time will always be divisible by the total disk I/O time.
+2. In FCFS, a process returning from I/O activity will be placed in the *front* of the queue. Let's make FCFS as unfair as possible!
+
 ## Overview of Linux scheduling
 
 Initially, Linux used a Round-Robin scheduling algorithm. This was replaced with the priority queue-based O(N) scheduler, which was then replaced by a similar O(1) scheduler in kernel 2.4. Finally, Linux's default algorithm (that is, the one used for `SCHED_NORMAL`, non-realtime tasks) is the Completely Fair Scheduler, or CFS.
@@ -47,12 +54,14 @@ How does CFS work? It replaces the early queue with a red-black tree, which is a
 - CFS selects the left-most node as the next process to be executed, since this leftmost task has the smallest VRT and therefore has received the smallest slice of CPU time.
 
 Each process has a *maximum execution time*, equal to the time that the process has been waiting in the tree divided by the total number of processes:
+
 $$
 t_{max}=\frac{t_{waiting}}{n_{processes}}
 $$
+
 When the scheduler is invoked to run a new process:
 
 1. The leftmost node is select in the rbtree.
 2. If the selected process completes, it is removed from the tree.
-3. If the process reaches $$t_{max}$$ or is interrupted, it is re-inserted into the tree based on its updated execution time.
+3. If the process reaches $t_{max}$ or is interrupted, it is re-inserted into the tree based on its updated execution time.
 4. The new leftmost node is selected, repeating the process.
