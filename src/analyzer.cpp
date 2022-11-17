@@ -1,6 +1,7 @@
 #include <algorithm> // std::sort
 #include <cstdio>
 #include <iostream>
+#include <random>
 #include <string>
 #include <vector>
 
@@ -9,7 +10,7 @@ using namespace std;
 class Process
 {
 public:
-    Process(char label, float arrivalTime, float serviceTime, float totalIo, float ioBlock)
+    Process(string label, float arrivalTime, float serviceTime, float totalIo, float ioBlock)
     {
         this->label = label;
         this->arrivalTime = arrivalTime;
@@ -17,6 +18,7 @@ public:
         remainingIo = totalIo;
         remainingIoBlock = ioBlock;
         this->ioBlock = ioBlock;
+        responseTime = -1;
 
         if (ioBlock == 0)
             serviceBlock = 0;
@@ -24,7 +26,7 @@ public:
             serviceBlock = serviceTime / ((totalIo / ioBlock) + 1);
     }
     string label;
-    int arrivalTime, remainingService, remainingIo, ioBlock, serviceBlock, remainingIoBlock;
+    int arrivalTime, remainingService, remainingIo, ioBlock, serviceBlock, remainingIoBlock, finishTime, responseTime;
 };
 
 class Scheduler
@@ -38,7 +40,7 @@ public:
 
     void addProcess(Process p)
     {
-        cout << "Adding process " << p.label << endl;
+        printf("Adding process %s with {%i,%i,%i,%i}\n", p.label.c_str(), p.arrivalTime, p.remainingService, p.remainingIo, p.ioBlock);
         futureQueue.push_back(p);
     }
 
@@ -127,31 +129,41 @@ public:
     {
         printf("t |ready|io   |r|done\n");
         printf("---------------------\n");
-        while (time < 50)
+
+        // Continue running until all processes are in "done" queue
+        while (!(ioQueue.empty() &&
+                 readyQueue.empty() &&
+                 futureQueue.empty() &&
+                 runningProcess.empty()))
         {
+            if (time > 1000)
+            {
+                throw runtime_error("Maximum iterations reached.");
+            }
+
             // 1. Check for new additions to the Ready queue
             //    from the Future queue
-            auto it = futureQueue.begin();
-            while (it != futureQueue.end())
+
+            for (unsigned int i = 0; i < futureQueue.size(); ++i)
             {
-                // cout << it->label << endl;
-                if (it->arrivalTime <= time)
+                if (futureQueue.at(i).arrivalTime <= time)
                 {
                     if (runningProcess.empty())
                     {
-                        runningProcess.push_back(*it);
-                        blockStartTime = time;
+                        runningProcess.push_back(futureQueue.at(i));
+
+                        // The process was run immediately upon arrival,
+                        // so the responseTime should be zero
+                        if (runningProcess.back().responseTime == -1)
+                            runningProcess.back().responseTime = 0;
                     }
                     else
                     {
-                        readyQueue.push_back(*it);
+                        readyQueue.push_back(futureQueue.at(i));
                     }
-                    futureQueue.erase(it);
+                    futureQueue.erase(futureQueue.begin() + i);
+                    --i;
                 }
-                if (futureQueue.empty())
-                    break;
-                else
-                    it++;
             }
 
             // Is the running process done?
@@ -159,12 +171,18 @@ public:
             {
                 // Add currently running process to "done"
                 doneQueue.push_back(runningProcess.front());
+
+                doneQueue.back().finishTime = time - runningProcess.front().arrivalTime;
                 // Clear out currently running process
                 runningProcess.clear();
                 // Add the ready queue's front process to "running"
                 if (!readyQueue.empty())
                 {
+
                     runningProcess.push_back(readyQueue.front());
+
+                    if (runningProcess.back().responseTime == -1)
+                        runningProcess.back().responseTime = time - runningProcess.back().arrivalTime;
                     blockStartTime = time;
                     // Remove from the ready queue's front
                     readyQueue.erase(readyQueue.begin());
@@ -180,12 +198,16 @@ public:
             }
             else if (runningProcess.front().serviceBlock != 0 && time - blockStartTime >= runningProcess.front().serviceBlock)
             {
+                // printf("%i >= %i, pushing to I/O\n", time - blockStartTime, runningProcess.front().serviceBlock);
                 // Move running process to I/O queue
                 ioQueue.push_back(runningProcess.front());
                 runningProcess.clear();
                 if (!readyQueue.empty())
                 {
                     runningProcess.push_back(readyQueue.front());
+
+                    if (runningProcess.back().responseTime == -1)
+                        runningProcess.back().responseTime = time - runningProcess.back().arrivalTime;
                     blockStartTime = time;
                     readyQueue.erase(readyQueue.begin());
                 }
@@ -194,31 +216,53 @@ public:
             // Look through IO queue processes.
             // Decrement IO time on front process.
             // If remaining % io_block == 0, pop
-            if (!ioQueue.empty()) {
-                
+            if (!ioQueue.empty())
+            {
+
                 if (ioQueue.front().remainingIoBlock == 0)
                 {
                     ioQueue.front().remainingIoBlock = ioQueue.front().ioBlock;
                     if (runningProcess.empty())
                         runningProcess.push_back(ioQueue.front());
-                    else   
+                    else
                         readyQueue.insert(readyQueue.begin(), ioQueue.front());
                     ioQueue.erase(ioQueue.begin());
-                } else 
+                }
+                else
                 {
                     ioQueue.front().remainingIoBlock--;
                 }
                 ioQueue.front().remainingIo--;
-                
             }
- 
-                
 
             printStatus();
             if (!runningProcess.empty())
                 runningProcess.front().remainingService--;
             time++;
         }
+        analyze(doneQueue);
+    }
+
+    void analyze(vector<Process> processes)
+    {
+        int maxFinishTime = 0;
+        float totalFinishTime = 0.0;
+        int maxResponseTime = 0;
+        float totalResponseTime = 0.0;
+        for (Process p : processes)
+        {
+            maxFinishTime = max(maxFinishTime, p.finishTime);
+            totalFinishTime += p.finishTime;
+            maxResponseTime = max(maxResponseTime, p.responseTime);
+            totalResponseTime += p.responseTime;
+        }
+        printf("Finish time:         %2i   seconds\n", time-1);
+        printf("Avg turnaround time: %2.1f seconds\n", totalFinishTime / processes.size());
+        printf("Max turnaround time: %2i   seconds\n", maxFinishTime);
+        printf("Avg response time:   %2.2f seconds\n", totalResponseTime / processes.size());
+        printf("Max response time:   %2i   seconds\n", maxResponseTime);
+        printf("TAT/Response ratio:  %2.2f seconds/second\n",  (totalFinishTime / processes.size())/(totalResponseTime / processes.size()));
+        printf("Throughput: %.2f processes/second", static_cast<float>(processes.size())/(time-1));
     }
 
 private:
@@ -228,13 +272,27 @@ int main()
 {
     FcfsScheduler s;
 
-    s.addProcess(Process('A', 0, 6, 1, 1));
-    s.addProcess(Process('B', 2, 12, 2, 2));
-    s.addProcess(Process('C', 4, 8, 1, 1));
-    s.addProcess(Process('D', 6, 10, 0, 0));
-    s.addProcess(Process('E', 8, 4, 2, 2));
-    // s.addProcess(Process{"B", 2.0, 12.0, 2.0, 2.0});
-    // s.addProcess(Process{"C", 4.0, 8.0, 1.0, 1.0});
+    size_t num_proceses = 4;
+    random_device rd;
+    mt19937 gen(rd());
+    uniform_int_distribution<> distr(2, 10);
+
+    for (int i = 0; i < num_proceses; i++)
+    {
+        string label = string(1, char(i + 65)); // i=0 -> 65 = 'A'
+
+        int arrivalTime = distr(gen) / 2;
+
+        int totalIoTime = (distr(gen) / 2);
+        int ioBlockTime = max(totalIoTime / ((distr(gen) / 3) + 1), 1);
+
+        // Find a service time that can be cleanly divided into IO segments
+        int serviceTime = ioBlockTime == 0 ? distr(gen) : ((totalIoTime / ioBlockTime) + 1) * (distr(gen) / 4);
+
+        Process p = Process(label, arrivalTime, serviceTime, totalIoTime, ioBlockTime);
+        s.addProcess(p);
+    }
+
     s.run();
 
     return 0;

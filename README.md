@@ -32,7 +32,7 @@ $$\dagger$$ At equal intervals during service time
 
 ## Performance criteria
 
-1. Finish time
+1. Finish time: Time until the future, ready, and IO queues are empty
 2. Response time
 3. Turnaround time (TAT)
 4. Ratio of TAT to service time
