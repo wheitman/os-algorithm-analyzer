@@ -99,14 +99,29 @@ public:
 
     void run()
     {
-        while (readyQueue.size() > 0)
-        {
-            step();
-        }
+        throw runtime_error("run() not implemented in base class");
     }
 
-    void step()
+    void analyze(vector<Process> processes)
     {
+        int maxFinishTime = 0;
+        float totalFinishTime = 0.0;
+        int maxResponseTime = 0;
+        float totalResponseTime = 0.0;
+        for (Process p : processes)
+        {
+            maxFinishTime = max(maxFinishTime, p.finishTime);
+            totalFinishTime += p.finishTime;
+            maxResponseTime = max(maxResponseTime, p.responseTime);
+            totalResponseTime += p.responseTime;
+        }
+        printf("Finish time:         %2i   seconds\n", time - 1);
+        printf("Avg turnaround time: %2.1f seconds\n", totalFinishTime / processes.size());
+        printf("Max turnaround time: %2i   seconds\n", maxFinishTime);
+        printf("Avg response time:   %2.2f seconds\n", totalResponseTime / processes.size());
+        printf("Max response time:   %2i   seconds\n", maxResponseTime);
+        printf("TAT/Response ratio:  %2.2f seconds/second\n", (totalFinishTime / processes.size()) / (totalResponseTime / processes.size()));
+        printf("Throughput: %.2f processes/second", static_cast<float>(processes.size()) / (time - 1));
     }
 
     vector<Process> doneQueue;
@@ -246,28 +261,6 @@ public:
         analyze(doneQueue);
     }
 
-    void analyze(vector<Process> processes)
-    {
-        int maxFinishTime = 0;
-        float totalFinishTime = 0.0;
-        int maxResponseTime = 0;
-        float totalResponseTime = 0.0;
-        for (Process p : processes)
-        {
-            maxFinishTime = max(maxFinishTime, p.finishTime);
-            totalFinishTime += p.finishTime;
-            maxResponseTime = max(maxResponseTime, p.responseTime);
-            totalResponseTime += p.responseTime;
-        }
-        printf("Finish time:         %2i   seconds\n", time-1);
-        printf("Avg turnaround time: %2.1f seconds\n", totalFinishTime / processes.size());
-        printf("Max turnaround time: %2i   seconds\n", maxFinishTime);
-        printf("Avg response time:   %2.2f seconds\n", totalResponseTime / processes.size());
-        printf("Max response time:   %2i   seconds\n", maxResponseTime);
-        printf("TAT/Response ratio:  %2.2f seconds/second\n",  (totalFinishTime / processes.size())/(totalResponseTime / processes.size()));
-        printf("Throughput: %.2f processes/second", static_cast<float>(processes.size())/(time-1));
-    }
-
 private:
 };
 
@@ -347,9 +340,6 @@ public:
                 blockStartTime = time;
             }
 
-            
-
-            
             if (runningProcess.empty())
             {
                 // cerr << "No process is running!" << endl;
@@ -373,7 +363,8 @@ public:
                 }
             }
             // Has the running service met its quantum?
-            else if (runningProcess.front().currentRunningTime >= _quantum) {
+            else if (runningProcess.front().currentRunningTime >= _quantum)
+            {
                 // cout << "Quantum met, moving to ready queue" <<endl;
                 runningProcess.front().currentRunningTime = 0;
                 readyQueue.push_back(runningProcess.front());
@@ -412,35 +403,14 @@ public:
             }
 
             printStatus();
-            if (!runningProcess.empty()) {
+            if (!runningProcess.empty())
+            {
                 runningProcess.front().remainingService--;
                 runningProcess.front().currentRunningTime++;
             }
             time++;
         }
         analyze(doneQueue);
-    }
-
-    void analyze(vector<Process> processes)
-    {
-        int maxFinishTime = 0;
-        float totalFinishTime = 0.0;
-        int maxResponseTime = 0;
-        float totalResponseTime = 0.0;
-        for (Process p : processes)
-        {
-            maxFinishTime = max(maxFinishTime, p.finishTime);
-            totalFinishTime += p.finishTime;
-            maxResponseTime = max(maxResponseTime, p.responseTime);
-            totalResponseTime += p.responseTime;
-        }
-        printf("Finish time:         %2i   seconds\n", time-1);
-        printf("Avg turnaround time: %2.1f seconds\n", totalFinishTime / processes.size());
-        printf("Max turnaround time: %2i   seconds\n", maxFinishTime);
-        printf("Avg response time:   %2.2f seconds\n", totalResponseTime / processes.size());
-        printf("Max response time:   %2i   seconds\n", maxResponseTime);
-        printf("TAT/Response ratio:  %2.2f seconds/second\n",  (totalFinishTime / processes.size())/(totalResponseTime / processes.size()));
-        printf("Throughput: %.2f processes/second", static_cast<float>(processes.size())/(time-1));
     }
 
 private:
