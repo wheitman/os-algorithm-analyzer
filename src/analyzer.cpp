@@ -27,6 +27,7 @@ public:
     }
     string label;
     int arrivalTime, remainingService, remainingIo, ioBlock, serviceBlock, remainingIoBlock, finishTime, responseTime;
+    int currentRunningTime = 0;
 };
 
 class Scheduler
@@ -170,6 +171,7 @@ public:
             if (!runningProcess.empty() && runningProcess.front().remainingService == 0)
             {
                 // Add currently running process to "done"
+                runningProcess.front().currentRunningTime = 0;
                 doneQueue.push_back(runningProcess.front());
 
                 doneQueue.back().finishTime = time - runningProcess.front().arrivalTime;
@@ -200,6 +202,7 @@ public:
             {
                 // printf("%i >= %i, pushing to I/O\n", time - blockStartTime, runningProcess.front().serviceBlock);
                 // Move running process to I/O queue
+                runningProcess.front().currentRunningTime = 0;
                 ioQueue.push_back(runningProcess.front());
                 runningProcess.clear();
                 if (!readyQueue.empty())
@@ -268,14 +271,190 @@ public:
 private:
 };
 
+class RoundRobinScheduler : public Scheduler
+{
+public:
+    RoundRobinScheduler(int quantum) : Scheduler()
+    {
+        _quantum = quantum;
+    }
+
+    // Find the process with the smallest arrival time and remove it
+    void run()
+    {
+        printf("t |ready|io   |r|done\n");
+        printf("---------------------\n");
+
+        // Continue running until all processes are in "done" queue
+        while (!(ioQueue.empty() &&
+                 readyQueue.empty() &&
+                 futureQueue.empty() &&
+                 runningProcess.empty()))
+        {
+            if (time > 1000)
+            {
+                throw runtime_error("Maximum iterations reached.");
+            }
+
+            // 1. Check for new additions to the Ready queue
+            //    from the Future queue
+
+            for (unsigned int i = 0; i < futureQueue.size(); ++i)
+            {
+                if (futureQueue.at(i).arrivalTime <= time)
+                {
+                    if (runningProcess.empty())
+                    {
+                        runningProcess.push_back(futureQueue.at(i));
+
+                        // The process was run immediately upon arrival,
+                        // so the responseTime should be zero
+                        if (runningProcess.back().responseTime == -1)
+                            runningProcess.back().responseTime = 0;
+                    }
+                    else
+                    {
+                        readyQueue.push_back(futureQueue.at(i));
+                    }
+                    futureQueue.erase(futureQueue.begin() + i);
+                    --i;
+                }
+            }
+
+            // Is the running process done?
+            if (!runningProcess.empty() && runningProcess.front().remainingService == 0)
+            {
+                // Add currently running process to "done"
+                runningProcess.front().currentRunningTime = 0;
+                doneQueue.push_back(runningProcess.front());
+
+                doneQueue.back().finishTime = time - runningProcess.front().arrivalTime;
+                // Clear out currently running process
+                runningProcess.clear();
+                // Add the ready queue's front process to "running"
+                if (!readyQueue.empty())
+                {
+
+                    runningProcess.push_back(readyQueue.front());
+
+                    if (runningProcess.back().responseTime == -1)
+                        runningProcess.back().responseTime = time - runningProcess.back().arrivalTime;
+                    blockStartTime = time;
+                    // Remove from the ready queue's front
+                    readyQueue.erase(readyQueue.begin());
+                }
+                // Reset blockStartTime
+                blockStartTime = time;
+            }
+
+            
+
+            
+            if (runningProcess.empty())
+            {
+                // cerr << "No process is running!" << endl;
+            }
+            // Is the running process ready for IO?
+            else if (runningProcess.front().serviceBlock != 0 && time - blockStartTime >= runningProcess.front().serviceBlock)
+            {
+                // printf("%i >= %i, pushing to I/O\n", time - blockStartTime, runningProcess.front().serviceBlock);
+                // Move running process to I/O queue
+                runningProcess.front().currentRunningTime = 0;
+                ioQueue.push_back(runningProcess.front());
+                runningProcess.clear();
+                if (!readyQueue.empty())
+                {
+                    runningProcess.push_back(readyQueue.front());
+
+                    if (runningProcess.back().responseTime == -1)
+                        runningProcess.back().responseTime = time - runningProcess.back().arrivalTime;
+                    blockStartTime = time;
+                    readyQueue.erase(readyQueue.begin());
+                }
+            }
+            // Has the running service met its quantum?
+            else if (runningProcess.front().currentRunningTime >= _quantum) {
+                // cout << "Quantum met, moving to ready queue" <<endl;
+                runningProcess.front().currentRunningTime = 0;
+                readyQueue.push_back(runningProcess.front());
+                runningProcess.clear();
+                if (!readyQueue.empty())
+                {
+                    runningProcess.push_back(readyQueue.front());
+
+                    if (runningProcess.back().responseTime == -1)
+                        runningProcess.back().responseTime = time - runningProcess.back().arrivalTime;
+                    blockStartTime = time;
+                    readyQueue.erase(readyQueue.begin());
+                }
+            }
+
+            // Look through IO queue processes.
+            // Decrement IO time on front process.
+            // If remaining % io_block == 0, pop
+            if (!ioQueue.empty())
+            {
+
+                if (ioQueue.front().remainingIoBlock == 0)
+                {
+                    ioQueue.front().remainingIoBlock = ioQueue.front().ioBlock;
+                    if (runningProcess.empty())
+                        runningProcess.push_back(ioQueue.front());
+                    else
+                        readyQueue.insert(readyQueue.begin(), ioQueue.front());
+                    ioQueue.erase(ioQueue.begin());
+                }
+                else
+                {
+                    ioQueue.front().remainingIoBlock--;
+                }
+                ioQueue.front().remainingIo--;
+            }
+
+            printStatus();
+            if (!runningProcess.empty()) {
+                runningProcess.front().remainingService--;
+                runningProcess.front().currentRunningTime++;
+            }
+            time++;
+        }
+        analyze(doneQueue);
+    }
+
+    void analyze(vector<Process> processes)
+    {
+        int maxFinishTime = 0;
+        float totalFinishTime = 0.0;
+        int maxResponseTime = 0;
+        float totalResponseTime = 0.0;
+        for (Process p : processes)
+        {
+            maxFinishTime = max(maxFinishTime, p.finishTime);
+            totalFinishTime += p.finishTime;
+            maxResponseTime = max(maxResponseTime, p.responseTime);
+            totalResponseTime += p.responseTime;
+        }
+        printf("Finish time:         %2i   seconds\n", time-1);
+        printf("Avg turnaround time: %2.1f seconds\n", totalFinishTime / processes.size());
+        printf("Max turnaround time: %2i   seconds\n", maxFinishTime);
+        printf("Avg response time:   %2.2f seconds\n", totalResponseTime / processes.size());
+        printf("Max response time:   %2i   seconds\n", maxResponseTime);
+        printf("TAT/Response ratio:  %2.2f seconds/second\n",  (totalFinishTime / processes.size())/(totalResponseTime / processes.size()));
+        printf("Throughput: %.2f processes/second", static_cast<float>(processes.size())/(time-1));
+    }
+
+private:
+    int _quantum;
+};
+
 int main()
 {
-    FcfsScheduler s;
+    RoundRobinScheduler s(3);
 
     size_t num_proceses = 4;
     random_device rd;
     mt19937 gen(rd());
-    uniform_int_distribution<> distr(2, 10);
+    uniform_int_distribution<> distr(2, 12);
 
     for (int i = 0; i < num_proceses; i++)
     {
