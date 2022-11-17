@@ -417,9 +417,186 @@ private:
     int _quantum;
 };
 
+// Shortest Remaining Time
+class SrtScheduler : public Scheduler
+{
+public:
+    SrtScheduler() : Scheduler()
+    {
+    }
+
+    int getShortestRemainingIdx()
+    {
+        vector<Process> processes = readyQueue;
+        int shortestIdx = 0; // Start by assuming first process
+        int shortestVal = processes.front().remainingService;
+
+        for (int i = 0; i < processes.size(); i++)
+        {
+            Process p = processes.at(i);
+
+            if (p.remainingService < shortestVal) {
+                shortestVal = p.remainingService;
+                shortestIdx = i;
+            }
+        }
+        Process srtProc = processes.at(shortestIdx);
+        // printf("SRT process is %s with RT = %i\n", srtProc.label.c_str(), shortestVal);
+        // printf("Current running is %i\n", runningProcess.front().remainingService);
+        return(shortestIdx);
+    }
+
+    // Find the process with the smallest arrival time and remove it
+    void run()
+    {
+        printf("t |ready|io   |r|done\n");
+        printf("---------------------\n");
+
+        // Continue running until all processes are in "done" queue
+        while (!(ioQueue.empty() &&
+                 readyQueue.empty() &&
+                 futureQueue.empty() &&
+                 runningProcess.empty()))
+        {
+            if (time > 1000)
+            {
+                throw runtime_error("Maximum iterations reached.");
+            }
+
+            // 1. Check for new additions to the Ready queue
+            //    from the Future queue
+
+            for (unsigned int i = 0; i < futureQueue.size(); ++i)
+            {
+                if (futureQueue.at(i).arrivalTime <= time)
+                {
+                    if (runningProcess.empty())
+                    {
+                        runningProcess.push_back(futureQueue.at(i));
+
+                        // The process was run immediately upon arrival,
+                        // so the responseTime should be zero
+                        if (runningProcess.back().responseTime == -1)
+                            runningProcess.back().responseTime = 0;
+                    }
+                    else
+                    {
+                        readyQueue.push_back(futureQueue.at(i));
+                    }
+                    futureQueue.erase(futureQueue.begin() + i);
+                    --i;
+                }
+            }
+
+            // Is the running process done?
+            if (!runningProcess.empty() && runningProcess.front().remainingService == 0)
+            {
+                // Add currently running process to "done"
+                runningProcess.front().currentRunningTime = 0;
+                doneQueue.push_back(runningProcess.front());
+
+                doneQueue.back().finishTime = time - runningProcess.front().arrivalTime;
+                // Clear out currently running process
+                runningProcess.clear();
+                // Add the SRT process to "running"
+                if (!readyQueue.empty())
+                {
+                    int srtIdx = getShortestRemainingIdx();
+                    runningProcess.push_back(readyQueue.at(srtIdx));
+
+                    if (runningProcess.back().responseTime == -1)
+                        runningProcess.back().responseTime = time - runningProcess.back().arrivalTime;
+                    blockStartTime = time;
+                    // Remove from the ready queue's srtIdx
+                    readyQueue.erase(readyQueue.begin() + srtIdx );
+                }
+                // Reset blockStartTime
+                blockStartTime = time;
+            }
+
+            if (runningProcess.empty())
+            {
+                // cerr << "No process is running!" << endl;
+            }
+            // Is the running process ready for IO?
+            else if (runningProcess.front().serviceBlock != 0 && time - blockStartTime >= runningProcess.front().serviceBlock)
+            {
+                // printf("%i >= %i, pushing to I/O\n", time - blockStartTime, runningProcess.front().serviceBlock);
+                // Move running process to I/O queue
+                runningProcess.front().currentRunningTime = 0;
+                ioQueue.push_back(runningProcess.front());
+                runningProcess.clear();
+                if (!readyQueue.empty())
+                {
+                    int srtIdx = getShortestRemainingIdx();
+                    runningProcess.push_back(readyQueue.at(srtIdx));
+
+                    if (runningProcess.back().responseTime == -1)
+                        runningProcess.back().responseTime = time - runningProcess.back().arrivalTime;
+                    blockStartTime = time;
+                    // Remove from the ready queue's srtIdx
+                    readyQueue.erase(readyQueue.begin() + srtIdx );
+                }
+            }
+
+            // Finally, find the SRT in the ready queue.
+            // If its RT is < runningProc.RT, swap them
+            if (!readyQueue.empty())
+            {
+                int readySrtIdx = getShortestRemainingIdx();
+                if (readyQueue.at(readySrtIdx).remainingService < runningProcess.front().remainingService) {
+                    // Swap the two
+                    // printf("Swapping %s and %s\n",
+                    // readyQueue.at(readySrtIdx).label.c_str(),
+                    // runningProcess.front().label.c_str()
+                    // );
+                    swap(readyQueue.at(readySrtIdx), runningProcess.front());
+                }
+            }
+
+
+            // Look through IO queue processes.
+            // Decrement IO time on front process.
+            // If remaining % io_block == 0, pop
+            if (!ioQueue.empty())
+            {
+
+                if (ioQueue.front().remainingIoBlock == 0)
+                {
+                    ioQueue.front().remainingIoBlock = ioQueue.front().ioBlock;
+                    if (runningProcess.empty())
+                        runningProcess.push_back(ioQueue.front());
+                    else
+                        readyQueue.insert(readyQueue.begin(), ioQueue.front());
+                    ioQueue.erase(ioQueue.begin());
+                }
+                else
+                {
+                    ioQueue.front().remainingIoBlock--;
+                }
+                ioQueue.front().remainingIo--;
+            }
+
+            printStatus();
+            if (!runningProcess.empty())
+            {
+                runningProcess.front().remainingService--;
+                runningProcess.front().currentRunningTime++;
+            }
+            time++;
+        }
+        analyze(doneQueue);
+    }
+
+private:
+    int _quantum;
+};
+
+
+
 int main()
 {
-    RoundRobinScheduler s(3);
+    SrtScheduler s;
 
     size_t num_proceses = 4;
     random_device rd;

@@ -8,7 +8,7 @@ These are outlined in section 9.2 of "Operating Systems: Internals and Design Pr
 Select the process with the smallest arrival time and run it until completion.
 
 ### Round Robin
-### Shortest Response Time (SRT)
+### Shortest Remaining Time (SRT)
 
 ### Highest Response Ratio Next (HRRN)
 
